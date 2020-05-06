@@ -1,0 +1,78 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(monocle3)
+library(Matrix)
+library(celegans.db)
+library(htmlwidgets)
+library(plotly)
+```
+
+```{r}
+hist(cell_metadata$embryo.time, breaks = 30, xlab = "Time (minutes)", ylab = "Number of cells", main = "Time since embryonic stage")
+```
+
+```{r}
+
+# read in cell and gene metadata and tidy them up
+cell_metadata <- read_csv("GSE126954_cell_annotation.csv")
+cell_metadata$X1 <- NULL
+row.names(cell_metadata) <- cell_metadata$cell
+gene_metadata <- read_csv("GSE126954_gene_annotation.csv")
+gene_metadata$X1 <- NULL
+row.names(gene_metadata) <- gene_metadata$id
+
+
+# read in count matrix into a dense matrix
+count_matrix <- Matrix::readMM("GSE126954_gene_by_cell_count_matrix.txt")
+```
+
+```{r}
+# make cds object in monocle3
+cds <- new_cell_data_set(count_matrix, cell_metadata, gene_metadata)
+
+# free up memory
+rm(count_matrix)
+rm(cell_metadata)
+rm(gene_metadata)
+
+# preprocess data with PCA to bring out principle components from the thousands of genes
+cds <- preprocess_cds(cds, num_dim = 100)
+
+# PC variance explanation plot
+plot_pc_variance_explained(cds)
+
+# dimensionality reduction
+cds <- reduce_dimension(cds)
+
+# plot batch effects
+plot_cells(cds, color_cells_by="batch", label_cell_groups=FALSE, show_trajectory_graph = FALSE)
+
+# align batches to remove batch effects
+cds <- align_cds(cds, alignment_group = "batch")
+cds <- reduce_dimension(cds)
+plot_cells(cds, color_cells_by="batch", label_cell_groups=FALSE, show_trajectory_graph = FALSE)
+
+# clustering
+cds <- cluster_cells(cds)
+
+# 2D UMAP plot
+plot_cells(cds, show_trajectory_graph = FALSE, color_cells_by = "plot.cell.type", group_label_size = 4, genes = c("myo-3"))
+plot_cells(cds, show_trajectory_graph = FALSE, color_cells_by = "plot.cell.type", group_label_size = 4, genes = c("elt-1"))
+plot_cells(cds, show_trajectory_graph = FALSE, color_cells_by = "embryo.time.bin", group_label_size = 0) + theme(legend.position="right")
+
+# 3D UMAP plot
+cds_3d <- reduce_dimension(cds, max_components = 3)
+cds_3d <- cluster_cells(cds_3d)
+plot_3d <- plot_cells_3d(cds_3d, color_cells_by="embryo.time.bin")
+htmlwidgets::saveWidget(as_widget(plot_3d), "3d_embryo.html")
+
+plot_3d <- plot_cells_3d(cds_3d, color_cells_by="plot.cell.type")
+htmlwidgets::saveWidget(as_widget(plot_3d), "3d_celltype.html")
+```
